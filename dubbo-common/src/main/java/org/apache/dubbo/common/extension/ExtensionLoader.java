@@ -97,6 +97,7 @@ public class ExtensionLoader<T> {
 
     private final Holder<Map<String, Class<?>>> cachedClasses = new Holder<>();
 
+    // 记录从配置文件. META-INF/dubbo, META-INF/services, META-INF/dubbo/internal 找到的key-value 放到cachedActivates 中。
     private final Map<String, Object> cachedActivates = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Holder<Object>> cachedInstances = new ConcurrentHashMap<>();
     private final Holder<Object> cachedAdaptiveInstance = new Holder<>();
@@ -108,6 +109,7 @@ public class ExtensionLoader<T> {
 
     private Map<String, IllegalStateException> exceptions = new ConcurrentHashMap<>();
 
+    // 通过java的spi机制在dubbo-common中找到LoadingStrategy 的实现类. 赋值给strategies.
     private static volatile LoadingStrategy[] strategies = loadLoadingStrategies();
 
     public static void setLoadingStrategies(LoadingStrategy... strategies) {
@@ -123,6 +125,12 @@ public class ExtensionLoader<T> {
      * @since 2.7.7
      */
     private static LoadingStrategy[] loadLoadingStrategies() {
+        // load(LoadingStrategy.class): 通过java的spi 来配置LoadingStrategy的实现类.
+        // LoadingStrategy 的实现包括[连接到 dubbo-common/resources/org.apache.dubbo.common.extension.LoadingStrategy文件]:
+        // org.apache.dubbo.common.extension.DubboInternalLoadingStrategy
+        // org.apache.dubbo.common.extension.DubboLoadingStrategy
+        // org.apache.dubbo.common.extension.ServicesLoadingStrategy
+        // 对上面的实现进行排序, 然后返回LoadingStrategy[]
         return stream(load(LoadingStrategy.class).spliterator(), false)
                 .sorted()
                 .toArray(LoadingStrategy[]::new);
@@ -157,11 +165,14 @@ public class ExtensionLoader<T> {
         if (!type.isInterface()) {
             throw new IllegalArgumentException("Extension type (" + type + ") is not an interface!");
         }
+        // 在使用dubbo spi功能的时候, 提示接口没有添加@SPI 注解修饰。
+        // 把下面这行去掉就可以通过了。功能也正常. 这应该是为了处理哪里漏洞做的补丁吧!!!
         if (!withExtensionAnnotation(type)) {
             throw new IllegalArgumentException("Extension type (" + type +
                     ") is not an extension, because it is NOT annotated with @" + SPI.class.getSimpleName() + "!");
         }
 
+        // 根据class 从缓存[Map]中拿到ExtensionLoader. 如果没有新增一个.
         ExtensionLoader<T> loader = (ExtensionLoader<T>) EXTENSION_LOADERS.get(type);
         if (loader == null) {
             EXTENSION_LOADERS.putIfAbsent(type, new ExtensionLoader<T>(type));
@@ -417,15 +428,20 @@ public class ExtensionLoader<T> {
         if (StringUtils.isEmpty(name)) {
             throw new IllegalArgumentException("Extension name == null");
         }
+        // 如果传进来的name=true. 则返回一个默认的extension
         if ("true".equals(name)) {
             return getDefaultExtension();
         }
+
+        // 创建一个extension 的Holder 对象放到cachedInstances 中.
         final Holder<Object> holder = getOrCreateHolder(name);
         Object instance = holder.get();
         if (instance == null) {
             synchronized (holder) {
                 instance = holder.get();
                 if (instance == null) {
+                    // 初始化实例. 即name对应的class, 通过反射生成的instance.返回
+                    // 并将instance 填充到holder中
                     instance = createExtension(name, wrap);
                     holder.set(instance);
                 }
@@ -447,11 +463,17 @@ public class ExtensionLoader<T> {
     /**
      * Return default extension, return <code>null</code> if it's not configured.
      */
+    // 返回一个默认的Extension.
     public T getDefaultExtension() {
+        // 读取 dubbo-spi 配置文件中的配置信息. 放到cachedClasses 中。
         getExtensionClasses();
+        // 判断cachedDefaultName是否配置.
+        // cachedDefaultName 在加载类文件的注解@SPI中的value. 对应到MATE-INF 下的配置文件的key
+        // 具体实现可以参考: org.apache.dubbo.common.extension.ExtensionLoader#cacheDefaultExtensionName
         if (StringUtils.isBlank(cachedDefaultName) || "true".equals(cachedDefaultName)) {
             return null;
         }
+        // 获取 key=@SPI.value 的extension
         return getExtension(cachedDefaultName);
     }
 
@@ -757,7 +779,9 @@ public class ExtensionLoader<T> {
             synchronized (cachedClasses) {
                 classes = cachedClasses.get();
                 if (classes == null) {
+                    // 将META-INF/dubbo， META-INF/services， META-INF/dubbo/internal 中的key-value 存到Map中返回赋值给classes.
                     classes = loadExtensionClasses();
+                    // 将从配置文件中加载的map放到 cachedClasses[Holder] 中。
                     cachedClasses.set(classes);
                 }
             }
@@ -773,6 +797,10 @@ public class ExtensionLoader<T> {
 
         Map<String, Class<?>> extensionClasses = new HashMap<>();
 
+        // strategies: {DubboInternalLoadingStrategy, DubboLoadingStrategy, ServicesLoadingStrategy}
+        // DubboInternalLoadingStrategy.directory: META-INF/dubbo/internal/
+        // DubboLoadingStrategy.directory: META-INF/dubbo/
+        // ServicesLoadingStrategy.directory: META-INF/services/
         for (LoadingStrategy strategy : strategies) {
             loadDirectory(extensionClasses, strategy.directory(), type.getName(), strategy.preferExtensionClassLoader(), strategy.overridden(), strategy.excludedPackages());
             loadDirectory(extensionClasses, strategy.directory(), type.getName().replace("org.apache", "com.alibaba"), strategy.preferExtensionClassLoader(), strategy.overridden(), strategy.excludedPackages());
@@ -896,11 +924,17 @@ public class ExtensionLoader<T> {
                     + clazz.getName() + " is not subtype of interface.");
         }
         if (clazz.isAnnotationPresent(Adaptive.class)) {
+            // 缓存cachedAdaptiveClass. 之缓存第一个
             cacheAdaptiveClass(clazz, overridden);
         } else if (isWrapperClass(clazz)) {
+            // 缓存Wrapper. 并将其放到cachedWrapperClasses[set]中
             cacheWrapperClass(clazz);
         } else {
             clazz.getConstructor();
+            // name 是dubbo-spi 中key-value的key.
+            // 如果name 为空, 进入findAnnotationName方法
+            // 1. 通过clazz上的@Extension 拿到值设置
+            // 2. 没有@Extension 使用clazz 的类名设置
             if (StringUtils.isEmpty(name)) {
                 name = findAnnotationName(clazz);
                 if (name.length() == 0) {
@@ -908,11 +942,16 @@ public class ExtensionLoader<T> {
                 }
             }
 
+            // dubbot-spi 在配置文件中的key-value形式中的key可以通过 , 来同时命名多个名字。
             String[] names = NAME_SEPARATOR.split(name);
             if (ArrayUtils.isNotEmpty(names)) {
+                // 将dubbo-spi中的key-value 放到cachedActivates 中
                 cacheActivateClass(clazz, names[0]);
                 for (String n : names) {
+                    // 将clazz对应的name 存在cachedNames 中缓存
                     cacheName(clazz, n);
+                    // extensionClasses: 最外层的Map<String, Class<?>> extensionClasses.
+                    //
                     saveInExtensionClass(extensionClasses, clazz, n, overridden);
                 }
             }

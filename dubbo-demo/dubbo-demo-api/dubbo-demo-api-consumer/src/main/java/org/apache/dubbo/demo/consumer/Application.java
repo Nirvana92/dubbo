@@ -26,11 +26,13 @@ import org.apache.dubbo.rpc.service.GenericService;
 
 public class Application {
     public static void main(String[] args) {
-        if (isClassic(args)) {
-            runWithRefer();
-        } else {
-            runWithBootstrap();
-        }
+        runWithRefer();
+
+//        if (isClassic(args)) {
+//            runWithRefer();
+//        } else {
+//            runWithBootstrap();
+//        }
     }
 
     private static boolean isClassic(String[] args) {

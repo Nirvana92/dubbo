@@ -169,23 +169,31 @@ public class ConfigValidationUtils {
     public static List<URL> loadRegistries(AbstractInterfaceConfig interfaceConfig, boolean provider) {
         // check && override if necessary
         List<URL> registryList = new ArrayList<URL>();
+        // 平台信息, 初始化其实就是写了一个applicationName
         ApplicationConfig application = interfaceConfig.getApplication();
+        // 注册中心信息: zookeeper://127.0.0.1:2181
         List<RegistryConfig> registries = interfaceConfig.getRegistries();
         if (CollectionUtils.isNotEmpty(registries)) {
             for (RegistryConfig config : registries) {
                 String address = config.getAddress();
+                // address=zookeeper://127.0.0.1:2181
                 if (StringUtils.isEmpty(address)) {
                     address = ANYHOST_VALUE;
                 }
                 if (!RegistryConfig.NO_AVAILABLE.equalsIgnoreCase(address)) {
                     Map<String, String> map = new HashMap<String, String>();
+                    // 将平台的信息拷贝到Map中
                     AbstractConfig.appendParameters(map, application);
+                    // 将每个注册信息拷贝到Map中
                     AbstractConfig.appendParameters(map, config);
                     map.put(PATH_KEY, RegistryService.class.getName());
+                    // 添加运行时信息. 包括dubbo版本号, pid, release等等
                     AbstractInterfaceConfig.appendRuntimeParameters(map);
+                    // 默认使用dubbo 协议
                     if (!map.containsKey(PROTOCOL_KEY)) {
                         map.put(PROTOCOL_KEY, DUBBO_PROTOCOL);
                     }
+                    // 根据注册中心的address 和map的信息.生成路径的列表
                     List<URL> urls = UrlUtils.parseURLs(address, map);
 
                     for (URL url : urls) {

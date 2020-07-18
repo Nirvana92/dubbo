@@ -274,6 +274,7 @@ public abstract class ServiceConfigBase<T> extends AbstractServiceConfig {
         }
         try {
             if (interfaceName != null && interfaceName.length() > 0) {
+                // 通过appClassLoader加载接口类, 打破双亲委派模型
                 this.interfaceClass = Class.forName(interfaceName, true, Thread.currentThread()
                         .getContextClassLoader());
             }
