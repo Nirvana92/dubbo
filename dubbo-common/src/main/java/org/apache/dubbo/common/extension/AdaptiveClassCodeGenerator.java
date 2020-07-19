@@ -88,15 +88,19 @@ public class AdaptiveClassCodeGenerator {
      */
     public String generate() {
         // no need to generate adaptive class since there's no adaptive method found.
+        // 检测所有的方法, 看方法上是否有@Adaptive 注解.没有的话抛出异常
         if (!hasAdaptiveMethod()) {
             throw new IllegalStateException("No adaptive method exist on extension " + type.getName() + ", refuse to create the adaptive class!");
         }
 
         StringBuilder code = new StringBuilder();
+        // 添加生成的包信息
         code.append(generatePackageInfo());
+        // 添加生成的导入信息
         code.append(generateImports());
+        // 生成类定义的信息
         code.append(generateClassDeclaration());
-
+        // 拼接method信息
         Method[] methods = type.getMethods();
         for (Method method : methods) {
             code.append(generateMethod(method));
@@ -125,6 +129,25 @@ public class AdaptiveClassCodeGenerator {
 
     /**
      * generate class declaration
+     *
+     * getCanonicalName(): 获取所传类从java语言规范定义的格式
+     * getName(): 返回实体类型名称
+     * getSimpleName(): 从源代码中返回实例的名称
+     *
+     * 内部类:
+     * getCanonicalName: org.nirvana.Main.Innr
+     * getName: org.nirvana.Main$Innr
+     * getSimpleName: Innr
+     *
+     * 匿名类:
+     * getCanonicalName: null
+     * getName: org.nirvana.Main$1
+     * getSimpleName:
+     *
+     * 数组类:
+     * getCanonicalName: java.lang.Object[]
+     * getName: [Ljava.lang.Object;
+     * getSimpleName: Object[]
      */
     private String generateClassDeclaration() {
         return String.format(CODE_CLASS_DECLARATION, type.getSimpleName(), type.getCanonicalName());

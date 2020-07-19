@@ -596,6 +596,7 @@ public class ExtensionLoader<T> {
     @SuppressWarnings("unchecked")
     public T getAdaptiveExtension() {
         Object instance = cachedAdaptiveInstance.get();
+        // 双重检测
         if (instance == null) {
             if (createAdaptiveInstanceError != null) {
                 throw new IllegalStateException("Failed to create adaptive instance: " +
@@ -607,7 +608,9 @@ public class ExtensionLoader<T> {
                 instance = cachedAdaptiveInstance.get();
                 if (instance == null) {
                     try {
+                        // 创建Adaptive 的Extension
                         instance = createAdaptiveExtension();
+                        // 填充到Adaptive的Instance
                         cachedAdaptiveInstance.set(instance);
                     } catch (Throwable t) {
                         createAdaptiveInstanceError = t;
@@ -692,8 +695,14 @@ public class ExtensionLoader<T> {
         return getExtensionClasses().containsKey(name);
     }
 
+    /**
+     * 通过判断set 方法, 然后通过ObjectFactory 注入属性.
+     * @DisableInject 可以标记不需要注入的方法
+     * @param instance
+     * @return
+     */
     private T injectExtension(T instance) {
-
+        // objectFactory 为空, 直接返回. 后面主要注入的属性都是通过objectFactory 拿到的Extension.
         if (objectFactory == null) {
             return instance;
         }
@@ -793,6 +802,7 @@ public class ExtensionLoader<T> {
      * synchronized in getExtensionClasses
      */
     private Map<String, Class<?>> loadExtensionClasses() {
+        // 缓存默认的ExtensionName. 即从@SPI注解中拿到值. 缓存到cachedDefaultName. 名字可以通过 , 隔离开来定义多个默认名字
         cacheDefaultExtensionName();
 
         Map<String, Class<?>> extensionClasses = new HashMap<>();
@@ -923,10 +933,12 @@ public class ExtensionLoader<T> {
                     type + ", class line: " + clazz.getName() + "), class "
                     + clazz.getName() + " is not subtype of interface.");
         }
+        // @Adaptive 缓存在类上
         if (clazz.isAnnotationPresent(Adaptive.class)) {
             // 缓存cachedAdaptiveClass. 之缓存第一个
             cacheAdaptiveClass(clazz, overridden);
         } else if (isWrapperClass(clazz)) {
+            // 判断是否是包装类, class是否有type[构建ExtensionLoader的类名] 为参数的构造方法
             // 缓存Wrapper. 并将其放到cachedWrapperClasses[set]中
             cacheWrapperClass(clazz);
         } else {
@@ -1063,13 +1075,19 @@ public class ExtensionLoader<T> {
 
     private Class<?> getAdaptiveExtensionClass() {
         getExtensionClasses();
+        // cachedAdaptiveClass == org.apache.dubbo.common.extension.factory.AdaptiveExtensionFactory
         if (cachedAdaptiveClass != null) {
             return cachedAdaptiveClass;
         }
         return cachedAdaptiveClass = createAdaptiveExtensionClass();
     }
 
+    /**
+     * 通过Javassist[java编程助手] 来操作字节码
+     * @return
+     */
     private Class<?> createAdaptiveExtensionClass() {
+        // 生成需要生成的类的代码字符串
         String code = new AdaptiveClassCodeGenerator(type, cachedDefaultName).generate();
         ClassLoader classLoader = findClassLoader();
         org.apache.dubbo.common.compiler.Compiler compiler = ExtensionLoader.getExtensionLoader(org.apache.dubbo.common.compiler.Compiler.class).getAdaptiveExtension();
